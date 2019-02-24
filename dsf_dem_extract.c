@@ -25,9 +25,10 @@
 #include <acfutils/dsf.h>
 #include <acfutils/math.h>
 #include <acfutils/png.h>
+#include <acfutils/safe_alloc.h>
 
 #define	ELEV_MET2SAMPLE(met) \
-	(round(255 * iter_fract((met), -418, 8848, B_TRUE)))
+	(round(255 * (1 - iter_fract((met), -418, 8848, B_TRUE))))
 
 static inline double
 demd_read(const dsf_atom_t *demi, const dsf_atom_t *demd,
@@ -110,7 +111,7 @@ load_dem_dsf(const char *filename, const dsf_atom_t **demi_p,
 }
 
 static void
-dem2png(const char *infile, const char *outfile)
+dem2png(const char *infile, const char *outfile, bool_t del_overlap)
 {
 	unsigned dsf_width, dsf_height;
 	uint8_t *pixels;
@@ -123,8 +124,12 @@ dem2png(const char *infile, const char *outfile)
 
 	dsf_width = demi->demi_atom.width;
 	dsf_height = demi->demi_atom.height;
+	if (del_overlap) {
+		dsf_width--;
+		dsf_height--;
+	}
 
-	pixels = malloc(dsf_width * dsf_height * sizeof (*pixels));
+	pixels = safe_malloc(dsf_width * dsf_height * sizeof (*pixels));
 
 	for (unsigned y = 0; y < dsf_height; y++) {
 		for (unsigned x = 0; x < dsf_width; x++) {
@@ -140,32 +145,54 @@ dem2png(const char *infile, const char *outfile)
 	dsf_fini(dsf);
 }
 
+static void
+make_empty_png(const char *filename, unsigned width, unsigned height)
+{
+	uint8_t *pixels = safe_malloc(width * height * sizeof (*pixels));
+	for (unsigned i = 0; i < width * height; i++)
+		pixels[i] = ELEV_MET2SAMPLE(0);
+	png_write_to_file_grey8(filename, width, height, pixels);
+	free(pixels);
+}
+
 int
 main(int argc, char *argv[])
 {
+	bool_t del_overlap = B_FALSE, empty_file = B_FALSE;
 	const char *in_filename = NULL, *out_filename = NULL;
 	int c;
 
-	while ((c = getopt(argc, argv, "h")) != -1) {
+	while ((c = getopt(argc, argv, "hoe")) != -1) {
 		switch (c) {
 		case 'h':
 			printf("Usage: %s <filename.dsf> <filename.png>\n",
 			    argv[0]);
 			return (0);
+		case 'o':
+			del_overlap = B_TRUE;
+			break;
+		case 'e':
+			empty_file = B_TRUE;
+			break;
 		default:
 			fprintf(stderr, "Try \"%s -h\" for help.\n", argv[0]);
 			return (1);
 		}
 	}
-	if (optind + 1 >= argc) {
+	if ((empty_file && optind >= argc) ||
+	    (!empty_file && optind + 1 >= argc)) {
 		fprintf(stderr, "Missing arguments. Try \"%s -h\" for help.\n",
 		    argv[0]);
 		return (1);
 	}
 	in_filename = argv[optind++];
+	if (empty_file) {
+		make_empty_png(in_filename, 1200, 1200);
+		return (0);
+	}
 	out_filename = argv[optind++];
 
-	dem2png(in_filename, out_filename);
+	dem2png(in_filename, out_filename, del_overlap);
 
 	return (0);
 }
