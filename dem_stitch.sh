@@ -1,8 +1,10 @@
 #!/bin/bash
 
+HERE="$(dirname "$0")"
+
 MONTAGE="montage"
 CONVERT="convert"
-EXTRACT="./dsf_dem_extract"
+EXTRACT="$HERE/dsf_dem_extract"
 RESOLUTION=1024x1024
 REMOVE_TEMP=0
 
@@ -43,8 +45,9 @@ for DSFFILE in "$INDIR"/*.dsf; do
 done
 
 # Fill in empty slots
-BASE_X=${BASEDIR:3:4}
-BASE_Y=${BASEDIR:0:3}
+BASE_X="$(echo ${BASEDIR:3:4} | sed 's/^\([+-]\)0\+\([1-9]\)/\1\2/g')"
+BASE_Y="$(echo ${BASEDIR:0:3} | sed 's/^\([+-]\)0\+\([1-9]\)/\1\2/g')"
+
 FILESET=""
 
 for (( Y=9; $Y >= 0; Y=$Y - 1)); do
