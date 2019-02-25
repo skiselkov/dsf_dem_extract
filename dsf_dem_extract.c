@@ -28,7 +28,7 @@
 #include <acfutils/safe_alloc.h>
 
 #define	ELEV_MET2SAMPLE(met) \
-	(round(255 * (1 - iter_fract((met), -418, 8848, B_TRUE))))
+	(round(255 * iter_fract((met), 8848, -418, B_TRUE)))
 
 static inline double
 demd_read(const dsf_atom_t *demi, const dsf_atom_t *demd,
