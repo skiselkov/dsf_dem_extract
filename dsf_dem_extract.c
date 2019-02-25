@@ -16,10 +16,11 @@
  * Copyright 2019 Saso Kiselkov. All rights reserved.
  */
 
-#include <getopt.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <getopt.h>
+#include <arpa/inet.h>
 
 #include <acfutils/assert.h>
 #include <acfutils/dsf.h>
@@ -110,11 +111,13 @@ load_dem_dsf(const char *filename, const dsf_atom_t **demi_p,
 	return (NULL);
 }
 
+#define	SHORT_IMG
+
 static void
-dem2png(const char *infile, const char *outfile, bool_t del_overlap)
+dem2png(const char *infile, const char *outfile, bool_t del_overlap,
+    bool_t bpp_16)
 {
 	unsigned dsf_width, dsf_height;
-	uint8_t *pixels;
 	dsf_t *dsf = NULL;
 	const dsf_atom_t *demi = NULL, *demd = NULL;
 
@@ -129,30 +132,58 @@ dem2png(const char *infile, const char *outfile, bool_t del_overlap)
 		dsf_height--;
 	}
 
-	pixels = safe_malloc(dsf_width * dsf_height * sizeof (*pixels));
+	if (bpp_16) {
+		uint16_t *pixels =
+		    safe_malloc(dsf_width * dsf_height * sizeof (*pixels));
 
-	for (unsigned y = 0; y < dsf_height; y++) {
-		for (unsigned x = 0; x < dsf_width; x++) {
-			pixels[y * dsf_width + x] =
-			    ELEV_MET2SAMPLE(demd_read(demi, demd,
-				dsf_height - y - 1, x));
+		for (unsigned y = 0; y < dsf_height; y++) {
+			for (unsigned x = 0; x < dsf_width; x++) {
+				pixels[y * dsf_width + x] =
+				    htons(demd_read(demi, demd,
+				    dsf_height - y - 1, x) + INT16_MAX);
+			}
 		}
+		png_write_to_file_grey16(outfile, dsf_width, dsf_height,
+		    pixels);
+		free(pixels);
+	} else {
+		uint8_t *pixels =
+		    safe_malloc(dsf_width * dsf_height * sizeof (*pixels));
+
+		for (unsigned y = 0; y < dsf_height; y++) {
+			for (unsigned x = 0; x < dsf_width; x++) {
+				pixels[y * dsf_width + x] =
+				    ELEV_MET2SAMPLE(demd_read(demi, demd,
+					dsf_height - y - 1, x));
+			}
+		}
+		png_write_to_file_grey8(outfile, dsf_width, dsf_height,
+		    pixels);
+		free(pixels);
 	}
 
-	png_write_to_file_grey8(outfile, dsf_width, dsf_height, pixels);
-
-	free(pixels);
 	dsf_fini(dsf);
 }
 
 static void
-make_empty_png(const char *filename, unsigned width, unsigned height)
+make_empty_png(const char *filename, unsigned width, unsigned height,
+    bool_t bpp_16)
 {
-	uint8_t *pixels = safe_malloc(width * height * sizeof (*pixels));
-	for (unsigned i = 0; i < width * height; i++)
-		pixels[i] = ELEV_MET2SAMPLE(0);
-	png_write_to_file_grey8(filename, width, height, pixels);
-	free(pixels);
+	if (bpp_16) {
+		int16_t *pixels = safe_malloc(width * height *
+		    sizeof (*pixels));
+		for (unsigned i = 0; i < width * height; i++)
+			pixels[i] = htons(INT16_MAX);
+		png_write_to_file_grey16(filename, width, height, pixels);
+		free(pixels);
+	} else {
+		uint8_t *pixels = safe_malloc(width * height *
+		    sizeof (*pixels));
+		for (unsigned i = 0; i < width * height; i++)
+			pixels[i] = ELEV_MET2SAMPLE(0);
+		png_write_to_file_grey8(filename, width, height, pixels);
+		free(pixels);
+	}
 }
 
 int
@@ -161,8 +192,9 @@ main(int argc, char *argv[])
 	bool_t del_overlap = B_FALSE, empty_file = B_FALSE;
 	const char *in_filename = NULL, *out_filename = NULL;
 	int c;
+	bool_t bpp_16 = B_FALSE;
 
-	while ((c = getopt(argc, argv, "hoe")) != -1) {
+	while ((c = getopt(argc, argv, "hoes")) != -1) {
 		switch (c) {
 		case 'h':
 			printf("Usage: %s <filename.dsf> <filename.png>\n",
@@ -173,6 +205,9 @@ main(int argc, char *argv[])
 			break;
 		case 'e':
 			empty_file = B_TRUE;
+			break;
+		case 's':
+			bpp_16 = B_TRUE;
 			break;
 		default:
 			fprintf(stderr, "Try \"%s -h\" for help.\n", argv[0]);
@@ -187,12 +222,12 @@ main(int argc, char *argv[])
 	}
 	in_filename = argv[optind++];
 	if (empty_file) {
-		make_empty_png(in_filename, 1200, 1200);
+		make_empty_png(in_filename, 1200, 1200, bpp_16);
 		return (0);
 	}
 	out_filename = argv[optind++];
 
-	dem2png(in_filename, out_filename, del_overlap);
+	dem2png(in_filename, out_filename, del_overlap, bpp_16);
 
 	return (0);
 }

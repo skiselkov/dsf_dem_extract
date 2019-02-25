@@ -24,6 +24,7 @@ EXTRACT="$HERE/dsf_dem_extract"
 RESOLUTION=1024x1024
 REMOVE_TEMP=0
 NCPUS=$(grep '^processor\>' /proc/cpuinfo | wc -l)
+DEPTH_SUFFIX="hgt"
 
 set -e
 
@@ -37,10 +38,15 @@ function taskq ()
 	"$@" &
 }
 
-while getopts "r:" o; do
+while getopts "r:s" o; do
 	case "${o}" in
 	r)
 		RESOLUTION="${OPTARG}x${OPTARG}"
+		;;
+	s)
+		BPP_FLAG="-s"
+		DEPTH_FLAG="-depth 16"
+		DEPTH_SUFFIX="h16"
 		;;
 	*)
 		echo "Usage $0 [-r <resolution] <INDIR>" >&2
@@ -67,7 +73,7 @@ for DSFFILE in "$INDIR"/*.dsf; do
 	PNGFILE="${PNGFILE/%.dsf/.png}"
 	if ! [ -f "$TMPDIR/$PNGFILE" ]; then
 		echo "[EXTRACT]  $(basename "$DSFFILE")"
-		taskq "$EXTRACT" -o "$DSFFILE" "$TMPDIR/$PNGFILE"
+		taskq "$EXTRACT" $BPP_FLAG -o "$DSFFILE" "$TMPDIR/$PNGFILE"
 	fi
 done
 wait
@@ -84,7 +90,7 @@ for (( Y=9; $Y >= 0; Y=$Y - 1)); do
 		    $(( $BASE_Y + $Y )) $(( $BASE_X + $X )) )"
 		if ! [ -f "$DSFFILE" ]; then
 			echo "[EMPTY]    $DSFFILE"
-			"$EXTRACT" -e "$DSFFILE"
+			"$EXTRACT" $BPP_FLAG -e "$DSFFILE"
 		fi
 		FILESET="$FILESET $DSFFILE"
 	done
@@ -94,10 +100,11 @@ MONTAGE_FILE="${TMPDIR}/montage.png"
 if ! [ -f "$MONTAGE_FILE" ]; then
 	echo "[MONTAGE]  $MONTAGE_FILE"
 	"$MONTAGE" -geometry '1200x1200>+0+0' -tile 10x10 $FILESET \
-	    "$MONTAGE_FILE"
+	    $DEPTH_FLAG "$MONTAGE_FILE"
 fi
 
 echo "[CONVERT]  $RESOLUTION"
-"$CONVERT" -resize "$RESOLUTION" "$MONTAGE_FILE" "$BASEDIR-hgt.png"
+"$CONVERT" -resize "$RESOLUTION" $DEPTH_FLAG "$MONTAGE_FILE" \
+    "$BASEDIR-$DEPTH_SUFFIX.png"
 
 rm -r "$TMPDIR"
